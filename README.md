@@ -15,7 +15,7 @@ An interactive **Dell UEFI BIOS Setup Utility** and **POST / Wake-on-LAN Simulat
 
 ---
 
-## Deploying via GitHub & Docker on Your Server
+## Deploying as a Docker Stack (Portainer / Docker Compose)
 
 ### 1. Push this repository to GitHub
 ```bash
@@ -27,26 +27,34 @@ git remote add origin https://github.com/<your-username>/<your-repo>.git
 git push -u origin main
 ```
 
-### 2. Run on your server with Docker Compose
+### 2. Deploy in Portainer (Stack from Git Repository)
+1. In Portainer, open **Stacks** → **+ Add stack**.
+2. Choose **Repository** as the Build method.
+3. Enter your GitHub repository URL (`https://github.com/<your-username>/<your-repo>`), branch `refs/heads/main`, and leave **Compose path** as `docker-compose.yml`.
+4. Click **Deploy the stack**.
+5. Open the emulator at `http://<your-server-ip>:8080`.
+
+> **Note:** If you previously got `open /data/compose/.../docker-compose.yml: no such file or directory`, make sure `docker-compose.yml` is committed and pushed to your GitHub branch, then click **Pull and redeploy** (or recreate the stack) in Portainer.
+
+### 3. Deploy via CLI on Any Linux Server
 ```bash
 git clone https://github.com/<your-username>/<your-repo>.git
 cd <your-repo>
 docker compose up -d --build
 ```
 
-The emulator will be available at `http://<your-server-ip>:8080`.
-To use a different host port (for example port `3000` or `80`), run:
-```bash
-PORT=3000 docker compose up -d --build
+### 4. Optional: Pre-built Image via GitHub Container Registry (GHCR)
+Pushing to `main` automatically runs `.github/workflows/docker-publish.yml` to publish `ghcr.io/<your-username>/<your-repo>:latest` if GitHub Actions is enabled on your repo. You can then use that image directly in a Portainer Web Editor stack:
+```yaml
+services:
+  bios-emulator:
+    image: ghcr.io/<your-username>/<your-repo>:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
 ```
 
-### 3. Alternative: Plain Docker CLI
-```bash
-docker build -t dell-bios-emulator .
-docker run -d --name dell-bios-emulator -p 8080:80 --restart unless-stopped dell-bios-emulator
-```
-
-### 4. Local Development (Node.js 20+)
+### 5. Local Development (Node.js 20+)
 ```bash
 npm install
 npm run dev
