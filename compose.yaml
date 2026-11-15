@@ -1,0 +1,9 @@
+services:
+  dell-bios-emulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dell-qbm1250-bios-emulator
+    ports:
+      - "${PORT:-8080}:80"
+    restart: unless-stopped

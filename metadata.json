@@ -1,0 +1,6 @@
+{
+  "name": "Dell System BIOS 1.20.0 (T2C2C) — UEFI Setup Emulator",
+  "description": "Interactive Dell UEFI BIOS Setup Utility (v1.20.0 / Driver ID T2C2C) and POST boot-chain simulator designed for technical lectures and hardware demonstrations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
