@@ -4,7 +4,10 @@ import {
   BiosConfig,
   BiosLogEntry,
   CategoryId,
+  FACTORY_BIOS_CONFIG,
+  FactoryDiffItem,
   FIRMWARE_METADATA,
+  formatBiosSettingValue,
 } from '../data/biosData';
 import {
   BiosRadioGroup,
@@ -19,12 +22,14 @@ interface CategorySettingsPaneProps {
   activeCategory: CategoryId;
   config: BiosConfig;
   savedConfig: BiosConfig;
+  factoryDiffs: FactoryDiffItem[];
   selectedSettingKey: string | null;
   adminLocked: boolean;
   logs: BiosLogEntry[];
   onSelectSetting: (key: string) => void;
   onUpdateConfig: <K extends keyof BiosConfig>(key: K, value: BiosConfig[K]) => void;
   onJumpToCategory: (cat: CategoryId) => void;
+  onJumpToSetting: (cat: CategoryId, key: string) => void;
   onOpenPasswordModal: (target: 'adminPassword' | 'systemPassword' | 'nvmePassword') => void;
   onClearTpm: () => void;
   onClearLogs: () => void;
@@ -35,12 +40,14 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
   activeCategory,
   config,
   savedConfig,
+  factoryDiffs,
   selectedSettingKey,
   adminLocked,
   logs,
   onSelectSetting,
   onUpdateConfig,
   onJumpToCategory,
+  onJumpToSetting,
   onOpenPasswordModal,
   onClearTpm,
   onClearLogs,
@@ -52,11 +59,19 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
   const isMod = (key: keyof BiosConfig) =>
     JSON.stringify(config[key]) !== JSON.stringify(savedConfig[key]);
 
+  const isFactoryDiff = (key: keyof BiosConfig) =>
+    JSON.stringify(config[key]) !== JSON.stringify(FACTORY_BIOS_CONFIG[key]);
+
+  const factoryVal = (key: keyof BiosConfig) =>
+    formatBiosSettingValue(key, FACTORY_BIOS_CONFIG[key]);
+
   if (activeCategory === 'overview') {
     return (
       <OverviewPanel
         config={config}
-        onJumpToCategory={(cat) => onJumpToCategory(cat)}
+        factoryDiffs={factoryDiffs}
+        onJumpToCategory={onJumpToCategory}
+        onJumpToSetting={onJumpToSetting}
       />
     );
   }
@@ -80,11 +95,14 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           entries={config.bootSequence}
           externalUsbBoot={config.externalUsbBoot}
           integratedNic={config.integratedNic}
+          httpsBoot={config.httpsBoot}
           disabled={adminLocked}
           onChange={(next) => onUpdateConfig('bootSequence', next)}
           onSelect={() => onSelectSetting('bootSequence')}
           isSelected={selectedSettingKey === 'bootSequence'}
           isModified={isMod('bootSequence')}
+          isChangedFromFactory={isFactoryDiff('bootSequence')}
+          factoryBootSummary={factoryVal('bootSequence')}
         />
 
         <BiosSettingCard
@@ -93,6 +111,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Verify cryptographic signatures of UEFI drivers and OS bootloaders before execution."
           isSelected={selectedSettingKey === 'secureBoot'}
           isModified={isMod('secureBoot')}
+          isChangedFromFactory={isFactoryDiff('secureBoot')}
+          factoryDefaultValue={factoryVal('secureBoot')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -107,9 +127,11 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         <BiosSettingCard
           settingKey="secureBootMode"
           title="Secure Boot Mode"
-          subtitle="Deployed Mode enforces signature checks; Audit Mode logs failures without halting."
+          subtitle="Deployed Mode enforces signature checks; Audit Mode logs failures without blocking."
           isSelected={selectedSettingKey === 'secureBootMode'}
           isModified={isMod('secureBootMode')}
+          isChangedFromFactory={isFactoryDiff('secureBootMode')}
+          factoryDefaultValue={factoryVal('secureBootMode')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -128,6 +150,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Trust third-party UEFI drivers and Linux shim bootloaders signed by Microsoft Corporation UEFI CA."
           isSelected={selectedSettingKey === 'microsoftUefiCa'}
           isModified={isMod('microsoftUefiCa')}
+          isChangedFromFactory={isFactoryDiff('microsoftUefiCa')}
+          factoryDefaultValue={factoryVal('microsoftUefiCa')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -145,6 +169,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Controls whether the Admin Password is required when booting an external UEFI path (F12 / USB / PXE)."
           isSelected={selectedSettingKey === 'uefiBootPathSecurity'}
           isModified={isMod('uefiBootPathSecurity')}
+          isChangedFromFactory={isFactoryDiff('uefiBootPathSecurity')}
+          factoryDefaultValue={factoryVal('uefiBootPathSecurity')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -156,11 +182,31 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
             onChange={(val) => onUpdateConfig('uefiBootPathSecurity', val)}
           />
         </BiosSettingCard>
+
+        <BiosSettingCard
+          settingKey="httpsBoot"
+          title="HTTPS Boot"
+          subtitle="Allow UEFI firmware to fetch signed OS deployment and recovery images over HTTPS URI paths."
+          isSelected={selectedSettingKey === 'httpsBoot'}
+          isModified={isMod('httpsBoot')}
+          isChangedFromFactory={isFactoryDiff('httpsBoot')}
+          factoryDefaultValue={factoryVal('httpsBoot')}
+          isLocked={adminLocked}
+          onSelect={onSelectSetting}
+        >
+          <BiosToggle
+            checked={config.httpsBoot}
+            disabled={adminLocked}
+            label="HTTPS Boot"
+            onChange={(val) => onUpdateConfig('httpsBoot', val)}
+          />
+        </BiosSettingCard>
       </div>
     );
   }
 
   if (activeCategory === 'storage') {
+    const sataChanged = isFactoryDiff('sataNvmeOperation');
     return (
       <div className="space-y-3">
         <div
@@ -168,14 +214,21 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           className={`rounded-md border p-4 cursor-pointer transition-colors ${
             selectedSettingKey === 'sataNvmeOperation'
               ? 'bg-[#1c2532] border-[#007DB8]'
+              : sataChanged
+              ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
               : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
           }`}
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <h3 className="text-[15px] font-semibold text-slate-100">SATA / NVMe Operation</h3>
+              {sataChanged && (
+                <span className="text-xs font-mono font-medium text-amber-300">
+                  Changed from Factory (Original: {factoryVal('sataNvmeOperation')})
+                </span>
+              )}
               {isMod('sataNvmeOperation') && (
-                <span className="text-xs font-mono font-medium text-amber-400">Modified</span>
+                <span className="text-xs font-mono font-medium text-sky-400">Unsaved</span>
               )}
             </div>
           </div>
@@ -209,8 +262,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
               <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
               <span>
                 Lecture Impact: Switching away from factory &ldquo;RAID On&rdquo; prevents an
-                existing Windows installation from booting unless Safe Mode storage drivers were
-                pre-staged.
+                existing Windows installation on hdd.1 from booting unless Safe Mode storage drivers
+                were pre-staged.
               </span>
             </div>
           )}
@@ -219,9 +272,11 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         <BiosSettingCard
           settingKey="m2Slot0Enabled"
           title="M.2 PCIe SSD-0"
-          subtitle="Primary NVMe Gen4 x4 slot (KIOXIA XG8 1024 GB)."
+          subtitle="Primary NVMe Gen4 x4 slot (KIOXIA XG8 1024 GB / hdd.1)."
           isSelected={selectedSettingKey === 'm2Slot0Enabled'}
           isModified={isMod('m2Slot0Enabled')}
+          isChangedFromFactory={isFactoryDiff('m2Slot0Enabled')}
+          factoryDefaultValue={factoryVal('m2Slot0Enabled')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -236,9 +291,11 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         <BiosSettingCard
           settingKey="m2Slot1Enabled"
           title="M.2 PCIe SSD-1"
-          subtitle="Secondary M.2 2280 expansion slot."
+          subtitle="Secondary M.2 2280 expansion slot (512 GB / hdd.2)."
           isSelected={selectedSettingKey === 'm2Slot1Enabled'}
           isModified={isMod('m2Slot1Enabled')}
+          isChangedFromFactory={isFactoryDiff('m2Slot1Enabled')}
+          factoryDefaultValue={factoryVal('m2Slot1Enabled')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -256,6 +313,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Check drive health attributes during POST and alert on predictive failure."
           isSelected={selectedSettingKey === 'smartReporting'}
           isModified={isMod('smartReporting')}
+          isChangedFromFactory={isFactoryDiff('smartReporting')}
+          factoryDefaultValue={factoryVal('smartReporting')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -273,6 +332,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Allow USB flash drives and external SSDs to appear as bootable UEFI media."
           isSelected={selectedSettingKey === 'externalUsbBoot'}
           isModified={isMod('externalUsbBoot')}
+          isChangedFromFactory={isFactoryDiff('externalUsbBoot')}
+          factoryDefaultValue={factoryVal('externalUsbBoot')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -293,9 +354,11 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         <BiosSettingCard
           settingKey="integratedNic"
           title="Integrated NIC"
-          subtitle="Controls onboard Intel I219-LM Gigabit Ethernet and PXE network boot stack."
+          subtitle="Controls onboard Intel Ethernet controller and PXE network boot stack."
           isSelected={selectedSettingKey === 'integratedNic'}
           isModified={isMod('integratedNic')}
+          isChangedFromFactory={isFactoryDiff('integratedNic')}
+          factoryDefaultValue={factoryVal('integratedNic')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -314,6 +377,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Present system-unique MAC address when connected through compatible USB-C / Thunderbolt docks."
           isSelected={selectedSettingKey === 'macAddressPassThrough'}
           isModified={isMod('macAddressPassThrough')}
+          isChangedFromFactory={isFactoryDiff('macAddressPassThrough')}
+          factoryDefaultValue={factoryVal('macAddressPassThrough')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -327,11 +392,51 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         </BiosSettingCard>
 
         <BiosSettingCard
+          settingKey="wirelessLan"
+          title="Wireless LAN"
+          subtitle="Enable or disable the internal M.2 Wi-Fi radio adapter in firmware."
+          isSelected={selectedSettingKey === 'wirelessLan'}
+          isModified={isMod('wirelessLan')}
+          isChangedFromFactory={isFactoryDiff('wirelessLan')}
+          factoryDefaultValue={factoryVal('wirelessLan')}
+          isLocked={adminLocked}
+          onSelect={onSelectSetting}
+        >
+          <BiosToggle
+            checked={config.wirelessLan}
+            disabled={adminLocked}
+            label="Wireless LAN"
+            onChange={(val) => onUpdateConfig('wirelessLan', val)}
+          />
+        </BiosSettingCard>
+
+        <BiosSettingCard
+          settingKey="bluetoothDevice"
+          title="Bluetooth Device"
+          subtitle="Enable or disable the integrated Bluetooth radio controller prior to OS load."
+          isSelected={selectedSettingKey === 'bluetoothDevice'}
+          isModified={isMod('bluetoothDevice')}
+          isChangedFromFactory={isFactoryDiff('bluetoothDevice')}
+          factoryDefaultValue={factoryVal('bluetoothDevice')}
+          isLocked={adminLocked}
+          onSelect={onSelectSetting}
+        >
+          <BiosToggle
+            checked={config.bluetoothDevice}
+            disabled={adminLocked}
+            label="Bluetooth Device"
+            onChange={(val) => onUpdateConfig('bluetoothDevice', val)}
+          />
+        </BiosSettingCard>
+
+        <BiosSettingCard
           settingKey="thunderboltEnabled"
           title="Enable Thunderbolt™ / USB4 Technology"
           subtitle="Enable PCIe tunneling and high-bandwidth Thunderbolt 4 device enumeration."
           isSelected={selectedSettingKey === 'thunderboltEnabled'}
           isModified={isMod('thunderboltEnabled')}
+          isChangedFromFactory={isFactoryDiff('thunderboltEnabled')}
+          factoryDefaultValue={factoryVal('thunderboltEnabled')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -349,6 +454,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="DMA authorization policy for Thunderbolt PCIe devices."
           isSelected={selectedSettingKey === 'thunderboltSecurity'}
           isModified={isMod('thunderboltSecurity')}
+          isChangedFromFactory={isFactoryDiff('thunderboltSecurity')}
+          factoryDefaultValue={factoryVal('thunderboltSecurity')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -372,6 +479,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable onboard HD audio controller."
           isSelected={selectedSettingKey === 'integratedAudio'}
           isModified={isMod('integratedAudio')}
+          isChangedFromFactory={isFactoryDiff('integratedAudio')}
+          factoryDefaultValue={factoryVal('integratedAudio')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -389,6 +498,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Hardware firmware switch for internal array microphone."
           isSelected={selectedSettingKey === 'internalMicrophone'}
           isModified={isMod('internalMicrophone')}
+          isChangedFromFactory={isFactoryDiff('internalMicrophone')}
+          factoryDefaultValue={factoryVal('internalMicrophone')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -406,6 +517,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Hardware firmware switch for integrated webcam."
           isSelected={selectedSettingKey === 'integratedCamera'}
           isModified={isMod('integratedCamera')}
+          isChangedFromFactory={isFactoryDiff('integratedCamera')}
+          factoryDefaultValue={factoryVal('integratedCamera')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -423,6 +536,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Provide 5V charging on USB PowerShare port while system is asleep or powered off."
           isSelected={selectedSettingKey === 'usbPowerShare'}
           isModified={isMod('usbPowerShare')}
+          isChangedFromFactory={isFactoryDiff('usbPowerShare')}
+          factoryDefaultValue={factoryVal('usbPowerShare')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -440,6 +555,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Default behavior of the top row F1–F12 keys."
           isSelected={selectedSettingKey === 'fnLockMode'}
           isModified={isMod('fnLockMode')}
+          isChangedFromFactory={isFactoryDiff('fnLockMode')}
+          factoryDefaultValue={factoryVal('fnLockMode')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -464,6 +581,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable CPU hardware virtualization extensions required by hypervisors and WSL2."
           isSelected={selectedSettingKey === 'intelVtx'}
           isModified={isMod('intelVtx')}
+          isChangedFromFactory={isFactoryDiff('intelVtx')}
+          factoryDefaultValue={factoryVal('intelVtx')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -481,6 +600,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable hardware DMA remapping and direct PCIe device assignment to virtual machines."
           isSelected={selectedSettingKey === 'intelVtd'}
           isModified={isMod('intelVtd')}
+          isChangedFromFactory={isFactoryDiff('intelVtd')}
+          factoryDefaultValue={factoryVal('intelVtd')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -498,6 +619,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable hardware-measured dynamic launch for high-assurance hypervisors."
           isSelected={selectedSettingKey === 'intelTxt'}
           isModified={isMod('intelTxt')}
+          isChangedFromFactory={isFactoryDiff('intelTxt')}
+          factoryDefaultValue={factoryVal('intelTxt')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -515,6 +638,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Use IOMMU pre-boot isolation to block unauthorized DMA access from Thunderbolt and external PCIe ports."
           isSelected={selectedSettingKey === 'kernelDmaProtection'}
           isModified={isMod('kernelDmaProtection')}
+          isChangedFromFactory={isFactoryDiff('kernelDmaProtection')}
+          factoryDefaultValue={factoryVal('kernelDmaProtection')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -538,6 +663,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle={`Discrete ${FIRMWARE_METADATA.tpmVendor} · Firmware ${FIRMWARE_METADATA.tpmFirmware}`}
           isSelected={selectedSettingKey === 'tpmEnabled'}
           isModified={isMod('tpmEnabled')}
+          isChangedFromFactory={isFactoryDiff('tpmEnabled')}
+          factoryDefaultValue={factoryVal('tpmEnabled')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -575,6 +702,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Allow OS management software to enable TPM without physical presence prompt."
           isSelected={selectedSettingKey === 'tpmPpiBypassEnable'}
           isModified={isMod('tpmPpiBypassEnable')}
+          isChangedFromFactory={isFactoryDiff('tpmPpiBypassEnable')}
+          factoryDefaultValue={factoryVal('tpmPpiBypassEnable')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -592,6 +721,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Allow automated OS tools to clear TPM keys without physical presence confirmation."
           isSelected={selectedSettingKey === 'tpmPpiBypassClear'}
           isModified={isMod('tpmPpiBypassClear')}
+          isChangedFromFactory={isFactoryDiff('tpmPpiBypassClear')}
+          factoryDefaultValue={factoryVal('tpmPpiBypassClear')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -609,6 +740,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enforce Ring -2 System Management Mode memory isolation (Critical patch in 1.20.0)."
           isSelected={selectedSettingKey === 'smmSecurityMitigation'}
           isModified={isMod('smmSecurityMitigation')}
+          isChangedFromFactory={isFactoryDiff('smmSecurityMitigation')}
+          factoryDefaultValue={factoryVal('smmSecurityMitigation')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -626,6 +759,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Permit Windows Update and Linux LVFS (fwupd) to deliver signed BIOS capsule updates."
           isSelected={selectedSettingKey === 'uefiCapsuleUpdates'}
           isModified={isMod('uefiCapsuleUpdates')}
+          isChangedFromFactory={isFactoryDiff('uefiCapsuleUpdates')}
+          factoryDefaultValue={factoryVal('uefiCapsuleUpdates')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -643,6 +778,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Firmware-resident asset recovery module."
           isSelected={selectedSettingKey === 'absolutePersistence'}
           isModified={isMod('absolutePersistence')}
+          isChangedFromFactory={isFactoryDiff('absolutePersistence')}
+          factoryDefaultValue={factoryVal('absolutePersistence')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -661,6 +798,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Perform NIST SP 800-88 cryptographic erase / NVMe Sanitize across internal drives on next reboot."
           isSelected={selectedSettingKey === 'dataWipeNextBoot'}
           isModified={isMod('dataWipeNextBoot')}
+          isChangedFromFactory={isFactoryDiff('dataWipeNextBoot')}
+          factoryDefaultValue={factoryVal('dataWipeNextBoot')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -688,6 +827,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           }
           isSelected={selectedSettingKey === 'adminPassword'}
           isModified={isMod('adminPassword')}
+          isChangedFromFactory={isFactoryDiff('adminPassword')}
+          factoryDefaultValue={factoryVal('adminPassword')}
           onSelect={onSelectSetting}
         >
           <button
@@ -714,6 +855,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           }
           isSelected={selectedSettingKey === 'systemPassword'}
           isModified={isMod('systemPassword')}
+          isChangedFromFactory={isFactoryDiff('systemPassword')}
+          factoryDefaultValue={factoryVal('systemPassword')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -741,6 +884,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           }
           isSelected={selectedSettingKey === 'nvmePassword'}
           isModified={isMod('nvmePassword')}
+          isChangedFromFactory={isFactoryDiff('nvmePassword')}
+          factoryDefaultValue={factoryVal('nvmePassword')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -764,6 +909,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enforce 8+ characters with mixed uppercase and lowercase letters for BIOS passwords."
           isSelected={selectedSettingKey === 'strongPassword'}
           isModified={isMod('strongPassword')}
+          isChangedFromFactory={isFactoryDiff('strongPassword')}
+          factoryDefaultValue={factoryVal('strongPassword')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -781,6 +928,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Skip System Password prompt during warm OS restarts."
           isSelected={selectedSettingKey === 'passwordBypass'}
           isModified={isMod('passwordBypass')}
+          isChangedFromFactory={isFactoryDiff('passwordBypass')}
+          factoryDefaultValue={factoryVal('passwordBypass')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -797,6 +946,7 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
   }
 
   if (activeCategory === 'preboot') {
+    const fastbootChanged = isFactoryDiff('fastboot');
     return (
       <div className="space-y-3">
         <div
@@ -804,13 +954,20 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           className={`rounded-md border p-4 cursor-pointer transition-colors ${
             selectedSettingKey === 'fastboot'
               ? 'bg-[#1c2532] border-[#007DB8]'
+              : fastbootChanged
+              ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
               : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <h3 className="text-[15px] font-semibold text-slate-100">Fastboot</h3>
+            {fastbootChanged && (
+              <span className="text-xs font-mono font-medium text-amber-300">
+                Changed from Factory (Original: {factoryVal('fastboot')})
+              </span>
+            )}
             {isMod('fastboot') && (
-              <span className="text-xs font-mono font-medium text-amber-400">Modified</span>
+              <span className="text-xs font-mono font-medium text-sky-400">Unsaved</span>
             )}
           </div>
           <p className="mt-1 text-[13px] text-slate-400">
@@ -834,6 +991,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Add splash delay so F2 / F12 hotkeys are easier to catch on fast NVMe systems."
           isSelected={selectedSettingKey === 'extendPostTime'}
           isModified={isMod('extendPostTime')}
+          isChangedFromFactory={isFactoryDiff('extendPostTime')}
+          factoryDefaultValue={factoryVal('extendPostTime')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -852,6 +1011,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Warn during POST if an under-wattage AC power adapter is connected."
           isSelected={selectedSettingKey === 'adapterWarnings'}
           isModified={isMod('adapterWarnings')}
+          isChangedFromFactory={isFactoryDiff('adapterWarnings')}
+          factoryDefaultValue={factoryVal('adapterWarnings')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -869,6 +1030,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Initialize NumLock ON when entering pre-boot authentication or OS login."
           isSelected={selectedSettingKey === 'numLockAtBoot'}
           isModified={isMod('numLockAtBoot')}
+          isChangedFromFactory={isFactoryDiff('numLockAtBoot')}
+          factoryDefaultValue={factoryVal('numLockAtBoot')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -886,6 +1049,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Choose how POST reacts to non-fatal hardware warnings."
           isSelected={selectedSettingKey === 'warningsAndErrors'}
           isModified={isMod('warningsAndErrors')}
+          isChangedFromFactory={isFactoryDiff('warningsAndErrors')}
+          factoryDefaultValue={factoryVal('warningsAndErrors')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -906,6 +1071,7 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
   }
 
   if (activeCategory === 'power') {
+    const thermalChanged = isFactoryDiff('thermalManagement');
     return (
       <div className="space-y-3">
         <div
@@ -913,13 +1079,20 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           className={`rounded-md border p-4 cursor-pointer transition-colors ${
             selectedSettingKey === 'thermalManagement'
               ? 'bg-[#1c2532] border-[#007DB8]'
+              : thermalChanged
+              ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
               : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
           }`}
         >
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <h3 className="text-[15px] font-semibold text-slate-100">Thermal Management</h3>
+            {thermalChanged && (
+              <span className="text-xs font-mono font-medium text-amber-300">
+                Changed from Factory (Original: {factoryVal('thermalManagement')})
+              </span>
+            )}
             {isMod('thermalManagement') && (
-              <span className="text-xs font-mono font-medium text-amber-400">Modified</span>
+              <span className="text-xs font-mono font-medium text-sky-400">Unsaved</span>
             )}
           </div>
           <p className="mt-1 text-[13px] text-slate-400">
@@ -948,6 +1121,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Power on system automatically when external AC power is connected or restored."
           isSelected={selectedSettingKey === 'wakeOnAc'}
           isModified={isMod('wakeOnAc')}
+          isChangedFromFactory={isFactoryDiff('wakeOnAc')}
+          factoryDefaultValue={factoryVal('wakeOnAc')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -965,6 +1140,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Prevent OS from entering S3 / Modern Standby sleep states."
           isSelected={selectedSettingKey === 'blockSleep'}
           isModified={isMod('blockSleep')}
+          isChangedFromFactory={isFactoryDiff('blockSleep')}
+          factoryDefaultValue={factoryVal('blockSleep')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -982,6 +1159,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Disable standby power rails in S4/S5 to minimize ErP Lot 6 off-mode power draw."
           isSelected={selectedSettingKey === 'deepSleepControl'}
           isModified={isMod('deepSleepControl')}
+          isChangedFromFactory={isFactoryDiff('deepSleepControl')}
+          factoryDefaultValue={factoryVal('deepSleepControl')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1029,6 +1208,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Allow USB HID devices or docks to wake the system from standby."
           isSelected={selectedSettingKey === 'usbWakeSupport'}
           isModified={isMod('usbWakeSupport')}
+          isChangedFromFactory={isFactoryDiff('usbWakeSupport')}
+          factoryDefaultValue={factoryVal('usbWakeSupport')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1046,6 +1227,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable hardware-controlled P-state frequency scaling."
           isSelected={selectedSettingKey === 'intelSpeedShift'}
           isModified={isMod('intelSpeedShift')}
+          isChangedFromFactory={isFactoryDiff('intelSpeedShift')}
+          factoryDefaultValue={factoryVal('intelSpeedShift')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1070,6 +1253,7 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
         : config.integratedNic !== 'Disabled';
     const deepSleepOk = config.deepSleepControl === 'Disabled';
     const wolEnabled = config.wakeOnLan !== 'Disabled';
+    const wolChanged = isFactoryDiff('wakeOnLan');
 
     return (
       <div className="space-y-3">
@@ -1078,14 +1262,21 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           className={`rounded-md border p-4 cursor-pointer transition-colors ${
             selectedSettingKey === 'wakeOnLan'
               ? 'bg-[#1c2532] border-[#007DB8]'
+              : wolChanged
+              ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
               : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
           }`}
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
               <h3 className="text-[15px] font-semibold text-slate-100">Wake on LAN / WLAN</h3>
+              {wolChanged && (
+                <span className="text-xs font-mono font-medium text-amber-300">
+                  Changed from Factory (Original: {factoryVal('wakeOnLan')})
+                </span>
+              )}
               {isMod('wakeOnLan') && (
-                <span className="text-xs font-mono font-medium text-amber-400">Modified</span>
+                <span className="text-xs font-mono font-medium text-sky-400">Unsaved</span>
               )}
             </div>
             <button
@@ -1143,8 +1334,7 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onJumpToCategory('power');
-                        onSelectSetting('deepSleepControl');
+                        onJumpToSetting('power', 'deepSleepControl');
                       }}
                       className="text-sky-400 hover:underline"
                     >
@@ -1168,8 +1358,7 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onJumpToCategory('system');
-                        onSelectSetting('integratedNic');
+                        onJumpToSetting('system', 'integratedNic');
                       }}
                       className="text-sky-400 hover:underline"
                     >
@@ -1207,6 +1396,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Specify power behavior after AC mains power loss and restoration."
           isSelected={selectedSettingKey === 'acRecovery'}
           isModified={isMod('acRecovery')}
+          isChangedFromFactory={isFactoryDiff('acRecovery')}
+          factoryDefaultValue={factoryVal('acRecovery')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1225,6 +1416,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Configure an RTC hardware schedule to automatically power on the desktop."
           isSelected={selectedSettingKey === 'autoOnTime'}
           isModified={isMod('autoOnTime')}
+          isChangedFromFactory={isFactoryDiff('autoOnTime')}
+          factoryDefaultValue={factoryVal('autoOnTime')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1243,6 +1436,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Control PCIe System Error (SERR#) message reporting."
           isSelected={selectedSettingKey === 'serrMessages'}
           isModified={isMod('serrMessages')}
+          isChangedFromFactory={isFactoryDiff('serrMessages')}
+          factoryDefaultValue={factoryVal('serrMessages')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1303,6 +1498,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Boot local pre-boot recovery environment when primary OS fails multiple startups."
           isSelected={selectedSettingKey === 'supportAssistRecovery'}
           isModified={isMod('supportAssistRecovery')}
+          isChangedFromFactory={isFactoryDiff('supportAssistRecovery')}
+          factoryDefaultValue={factoryVal('supportAssistRecovery')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1320,6 +1517,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Enable UEFI pre-boot HTTPS cloud OS recovery over Wi-Fi or Ethernet."
           isSelected={selectedSettingKey === 'biosConnect'}
           isModified={isMod('biosConnect')}
+          isChangedFromFactory={isFactoryDiff('biosConnect')}
+          factoryDefaultValue={factoryVal('biosConnect')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >
@@ -1337,6 +1536,8 @@ export const CategorySettingsPane: React.FC<CategorySettingsPaneProps> = ({
           subtitle="Block firmware downgrades prior to critical security baseline 1.20.0 (T2C2C)."
           isSelected={selectedSettingKey === 'rollbackProtection'}
           isModified={isMod('rollbackProtection')}
+          isChangedFromFactory={isFactoryDiff('rollbackProtection')}
+          factoryDefaultValue={factoryVal('rollbackProtection')}
           isLocked={adminLocked}
           onSelect={onSelectSetting}
         >

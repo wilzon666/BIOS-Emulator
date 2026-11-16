@@ -48,7 +48,9 @@ export const PostSimulatorModal: React.FC<PostSimulatorModalProps> = ({
       if (!entry.enabled) return false;
       if (entry.type === 'usb' && !config.externalUsbBoot) return false;
       if (entry.type === 'pxe' && config.integratedNic !== 'Enabled w/ PXE') return false;
-      if (entry.type === 'nvme' && !config.m2Slot0Enabled) return false;
+      if (entry.type === 'uri' && (!config.httpsBoot || config.integratedNic === 'Disabled')) return false;
+      if (entry.id === 'hdd.1' && !config.m2Slot0Enabled) return false;
+      if (entry.id === 'hdd.2' && !config.m2Slot1Enabled) return false;
       return true;
     });
   }, [config]);
@@ -115,11 +117,11 @@ export const PostSimulatorModal: React.FC<PostSimulatorModalProps> = ({
 
   const evaluation: BootEvaluation = useMemo(() => {
     const traces: string[] = [
-      `[POST] Dell System BIOS ${FIRMWARE_METADATA.biosVersion} (Package ${FIRMWARE_METADATA.driverId})`,
+      `[POST] Dell System BIOS ${FIRMWARE_METADATA.biosVersion} (${FIRMWARE_METADATA.driverId}) · SysId ${FIRMWARE_METADATA.sysId} · SvcTag ${FIRMWARE_METADATA.serviceTag}`,
       `[POST] Fastboot=${config.fastboot} · Extended POST=${config.extendPostTime} · NumLock=${config.numLockAtBoot ? 'ON' : 'OFF'}`,
       `[CPU] Intel Core Ultra · VT-x=${config.intelVtx ? 'ENABLED' : 'DISABLED'} · VT-d/IOMMU=${config.intelVtd ? 'ENABLED' : 'DISABLED'} · Kernel DMA=${config.kernelDmaProtection ? 'PROTECTED' : 'OFF'}`,
       `[SEC] TPM 2.0=${config.tpmEnabled ? 'ACTIVE (PCR 0-7 Measured)' : 'DISABLED'} · SMM Mitigation=${config.smmSecurityMitigation ? 'ON' : 'OFF'}`,
-      `[DISK] Storage Controller Mode=${config.sataNvmeOperation} · M.2 SSD-0=${config.m2Slot0Enabled ? 'ONLINE' : 'DISABLED'}`,
+      `[DISK] Controller=${config.sataNvmeOperation} · SSD-0 (hdd.1)=${config.m2Slot0Enabled ? 'ONLINE' : 'DISABLED'} · SSD-1 (hdd.2)=${config.m2Slot1Enabled ? 'ONLINE' : 'DISABLED'}`,
     ];
 
     if (initialMode === 'wol') {
@@ -270,7 +272,7 @@ export const PostSimulatorModal: React.FC<PostSimulatorModalProps> = ({
     }
 
     if (
-      chosenTarget.id === 'win-boot' &&
+      chosenTarget.id === 'hdd.1' &&
       config.sataNvmeOperation === 'AHCI/NVMe'
     ) {
       return {
@@ -466,7 +468,9 @@ export const PostSimulatorModal: React.FC<PostSimulatorModalProps> = ({
                   const blocked =
                     (entry.type === 'usb' && !config.externalUsbBoot) ||
                     (entry.type === 'pxe' && config.integratedNic !== 'Enabled w/ PXE') ||
-                    (entry.type === 'nvme' && !config.m2Slot0Enabled);
+                    (entry.type === 'uri' && (!config.httpsBoot || config.integratedNic === 'Disabled')) ||
+                    (entry.id === 'hdd.1' && !config.m2Slot0Enabled) ||
+                    (entry.id === 'hdd.2' && !config.m2Slot1Enabled);
                   return (
                     <button
                       key={entry.id}

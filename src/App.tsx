@@ -14,8 +14,10 @@ import {
   BiosConfig,
   BiosLogEntry,
   CategoryId,
-  DEFAULT_BIOS_CONFIG,
+  computeFactoryDiffs,
+  FACTORY_BIOS_CONFIG,
   FIRMWARE_METADATA,
+  IMPORTED_QBM1250_CONFIG,
   INITIAL_LOGS,
   LectureScenario,
   SETTING_HELP_MAP,
@@ -45,6 +47,7 @@ const DIFF_LABELS: Partial<Record<keyof BiosConfig, string>> = {
   secureBootMode: 'Secure Boot Mode',
   microsoftUefiCa: 'Microsoft UEFI CA',
   uefiBootPathSecurity: 'UEFI Boot Path Security',
+  httpsBoot: 'HTTPS Boot',
   bootSequence: 'Boot Sequence Order / Targets',
   sataNvmeOperation: 'SATA / NVMe Operation',
   m2Slot0Enabled: 'M.2 PCIe SSD-0',
@@ -53,6 +56,8 @@ const DIFF_LABELS: Partial<Record<keyof BiosConfig, string>> = {
   externalUsbBoot: 'External USB Drive Boot',
   integratedNic: 'Integrated NIC',
   macAddressPassThrough: 'MAC Address Pass-Through',
+  wirelessLan: 'Wireless LAN',
+  bluetoothDevice: 'Bluetooth Device',
   thunderboltEnabled: 'Thunderbolt / USB4',
   thunderboltSecurity: 'Thunderbolt Security Level',
   integratedAudio: 'Integrated Audio',
@@ -106,15 +111,15 @@ function getTimestampNow(): string {
 
 export default function App() {
   const [savedConfig, setSavedConfig] = useState<BiosConfig>(() =>
-    cloneConfig(DEFAULT_BIOS_CONFIG)
+    cloneConfig(IMPORTED_QBM1250_CONFIG)
   );
   const [draftConfig, setDraftConfig] = useState<BiosConfig>(() =>
-    cloneConfig(DEFAULT_BIOS_CONFIG)
+    cloneConfig(IMPORTED_QBM1250_CONFIG)
   );
   const [activeCategory, setActiveCategory] = useState<CategoryId>('overview');
   const [selectedSettingKey, setSelectedSettingKey] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeScenarioId, setActiveScenarioId] = useState<string | null>('default');
+  const [activeScenarioId, setActiveScenarioId] = useState<string | null>('imported-qbm1250');
 
   // Admin lock state: if saved or draft adminPassword exists & unlockedThisSession is false
   const [isUnlocked, setIsUnlocked] = useState(true);
@@ -197,7 +202,10 @@ export default function App() {
     return list;
   }, [savedConfig, draftConfig]);
 
-  // Count modified settings per category for left sidebar
+  // Compute diffs vs Dell Factory Original shipping state
+  const factoryDiffs = useMemo(() => computeFactoryDiffs(draftConfig), [draftConfig]);
+
+  // Count modified settings (unsaved) and Factory Original diffs per category for left sidebar
   const modifiedCountByCategory = useMemo(() => {
     const counts: Partial<Record<CategoryId, number>> = {};
     Object.values(SETTING_HELP_MAP).forEach((meta) => {
@@ -208,6 +216,14 @@ export default function App() {
     });
     return counts;
   }, [savedConfig, draftConfig]);
+
+  const factoryDiffCountByCategory = useMemo(() => {
+    const counts: Partial<Record<CategoryId, number>> = {};
+    factoryDiffs.forEach((d) => {
+      counts[d.category] = (counts[d.category] ?? 0) + 1;
+    });
+    return counts;
+  }, [factoryDiffs]);
 
   // Search index across all settings
   const searchResults = useMemo(() => {
@@ -244,7 +260,7 @@ export default function App() {
 
   const handleApplyScenario = (scenario: LectureScenario) => {
     if (adminLocked) return;
-    const base = cloneConfig(DEFAULT_BIOS_CONFIG);
+    const base = cloneConfig(FACTORY_BIOS_CONFIG);
     const merged: BiosConfig = {
       ...base,
       ...scenario.patch,
@@ -307,9 +323,17 @@ export default function App() {
 
   const handleLoadDefaults = () => {
     if (adminLocked) return;
-    setDraftConfig(cloneConfig(DEFAULT_BIOS_CONFIG));
+    setDraftConfig(cloneConfig(FACTORY_BIOS_CONFIG));
     setActiveScenarioId('default');
-    setStatusBanner('Loaded Factory Defaults (BIOS 1.20.0). Click Apply Changes to commit.');
+    setStatusBanner(
+      'Loaded Dell QBM1250 Factory Original baseline (0 changes vs shipping state). Click Apply Changes to commit.'
+    );
+  };
+
+  const handleJumpToSetting = (cat: CategoryId, key: string) => {
+    setSearchQuery('');
+    setActiveCategory(cat);
+    setSelectedSettingKey(key);
   };
 
   const activeCategoryObj = BIOS_CATEGORIES.find((c) => c.id === activeCategory);
@@ -413,6 +437,7 @@ export default function App() {
             {BIOS_CATEGORIES.map((cat) => {
               const active = activeCategory === cat.id && !searchQuery;
               const modCount = modifiedCountByCategory[cat.id] ?? 0;
+              const factoryCount = factoryDiffCountByCategory[cat.id] ?? 0;
               return (
                 <button
                   key={cat.id}
@@ -429,18 +454,31 @@ export default function App() {
                   }`}
                 >
                   <span>{cat.label}</span>
-                  {modCount > 0 && (
-                    <span
-                      className={`font-mono text-xs tabular-nums ${
-                        active ? 'text-sky-100' : 'text-amber-400'
-                      }`}
-                    >
-                      {modCount}
+                  {(factoryCount > 0 || modCount > 0) && (
+                    <span className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+                      {factoryCount > 0 && (
+                        <span className={active ? 'text-amber-200 font-semibold' : 'text-amber-300 font-semibold'}>
+                          {factoryCount}Δ
+                        </span>
+                      )}
+                      {modCount > 0 && (
+                        <span className={active ? 'text-sky-100' : 'text-sky-400'}>
+                          +{modCount}
+                        </span>
+                      )}
                     </span>
                   )}
                 </button>
               );
             })}
+          </div>
+          <div className="hidden lg:block mt-4 border-t border-[#232d3b] pt-3 px-2 text-[11px] font-mono text-slate-400 space-y-1">
+            <div>
+              <span className="text-amber-300 font-semibold">Δ</span> Changed vs Factory
+            </div>
+            <div>
+              <span className="text-sky-400">+</span> Unsaved edit
+            </div>
           </div>
         </nav>
 
@@ -556,8 +594,22 @@ export default function App() {
                     {FIRMWARE_METADATA.driverId})
                   </p>
                 </div>
-                <div className="text-xs font-mono text-slate-400 tabular-nums">
-                  Service Tag: {FIRMWARE_METADATA.serviceTag}
+                <div className="flex flex-wrap items-center gap-3 text-xs font-mono tabular-nums">
+                  {factoryDiffs.length > 0 && activeCategory !== 'overview' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveCategory('overview');
+                        setSelectedSettingKey(null);
+                      }}
+                      className="text-amber-300 hover:underline"
+                    >
+                      {factoryDiffs.length} vs. Factory Original
+                    </button>
+                  )}
+                  <span className="text-slate-400">
+                    Service Tag: {FIRMWARE_METADATA.serviceTag}
+                  </span>
                 </div>
               </div>
 
@@ -565,6 +617,7 @@ export default function App() {
                 activeCategory={activeCategory}
                 config={draftConfig}
                 savedConfig={savedConfig}
+                factoryDiffs={factoryDiffs}
                 selectedSettingKey={selectedSettingKey}
                 adminLocked={adminLocked}
                 logs={logs}
@@ -574,6 +627,7 @@ export default function App() {
                   setActiveCategory(cat);
                   setSelectedSettingKey(null);
                 }}
+                onJumpToSetting={handleJumpToSetting}
                 onOpenPasswordModal={(target) =>
                   setPasswordModalState({ open: true, mode: 'set', target })
                 }
@@ -595,8 +649,10 @@ export default function App() {
         <HelpInspectorPanel
           selectedSettingKey={selectedSettingKey}
           diffs={diffs}
+          factoryDiffs={factoryDiffs}
           activeScenarioId={activeScenarioId}
           onApplyScenario={handleApplyScenario}
+          onJumpToSetting={handleJumpToSetting}
           adminLocked={adminLocked}
         />
       </div>
@@ -611,7 +667,7 @@ export default function App() {
               onClick={handleLoadDefaults}
               className="rounded border border-[#334155] bg-[#19212c] px-3.5 py-2 text-xs font-medium text-slate-200 hover:border-slate-400 disabled:opacity-40 whitespace-nowrap"
             >
-              Load Defaults
+              Load Factory Defaults
             </button>
             <button
               type="button"

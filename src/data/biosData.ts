@@ -14,9 +14,10 @@ export type CategoryId =
 
 export interface BootEntry {
   id: string;
+  cctkCode: string;
   label: string;
   devicePath: string;
-  type: 'nvme' | 'usb' | 'pxe';
+  type: 'nvme' | 'usb' | 'pxe' | 'uri';
   signed: boolean;
   enabled: boolean;
   osLabel: string;
@@ -29,6 +30,7 @@ export interface BiosConfig {
   secureBootMode: 'Deployed Mode' | 'Audit Mode';
   microsoftUefiCa: boolean;
   uefiBootPathSecurity: 'Always Except Internal HDD' | 'Always' | 'Never';
+  httpsBoot: boolean;
   bootSequence: BootEntry[];
 
   // Storage
@@ -41,6 +43,8 @@ export interface BiosConfig {
   // System Configuration
   integratedNic: 'Enabled w/ PXE' | 'Enabled' | 'Disabled';
   macAddressPassThrough: 'System Unique MAC' | 'Disabled';
+  wirelessLan: boolean;
+  bluetoothDevice: boolean;
   thunderboltEnabled: boolean;
   thunderboltSecurity:
     | 'User Authorization'
@@ -117,6 +121,8 @@ export interface SettingMetadata {
   key: keyof BiosConfig | 'bootSequence' | 'clearTpmAction';
   category: CategoryId;
   title: string;
+  cctkKey?: string;
+  factoryCctkValue?: string;
   summary: string;
   lectureNote: string;
   riskNote?: string;
@@ -133,14 +139,21 @@ export interface LectureScenario {
 export const FIRMWARE_METADATA = {
   vendor: 'Dell Inc.',
   model: 'Dell Pro Micro Plus QBM1250',
+  sysId: '0D03',
   biosVersion: '1.20.0',
+  importedBiosVer: '1.18.2',
+  cctkEngineVer: '5.2.2.292',
+  importedFileName: 'QBM1250_bios_config_58746970.ini',
   driverId: 'T2C2C',
   releaseDate: '03 Nov 2026',
   urgency: 'Critical',
   downloadType: 'System BIOS',
   category: 'BIOS',
-  serviceTag: '7K9M2X3',
-  expressServiceCode: '16483920147',
+  serviceTag: '8J3TFK4',
+  expressServiceCode: '18574291044',
+  mfgDate: '2026-05-05',
+  firstPowerOnDate: '2026-06-26',
+  uuid: '4C4C4544-004A-3310-8054-B8C04F464B34',
   ecVersion: '1.14.2',
   meFirmware: '18.0.15.2384',
   tpmVendor: 'Nuvoton NPCT76x (TPM 2.0)',
@@ -148,52 +161,91 @@ export const FIRMWARE_METADATA = {
   sha256: 'e4a8c1f902d7b416a9c3305e82f4c19d70b1a4431887d52e90f22a8a4b906c11',
 };
 
-export const INITIAL_BOOT_SEQUENCE: BootEntry[] = [
-  {
-    id: 'win-boot',
-    label: 'Windows Boot Manager',
-    devicePath: 'PciRoot(0x0)/Pci(0x1D,0x0)/Pci(0x0,0x0)/NVMe(0x1,00-08-0D-04)/HD(1,GPT,8F2A-91C4)',
-    type: 'nvme',
-    signed: true,
-    enabled: true,
-    osLabel: 'Windows 11 Pro 24H2 (BitLocker Ready)',
-  },
-  {
-    id: 'usb-signed',
-    label: 'UEFI: Kingston DataTraveler 3.0',
-    devicePath: 'PciRoot(0x0)/Pci(0x14,0x0)/USB(0x3,0x0)/HD(1,GPT,31C0-B209)',
-    type: 'usb',
-    signed: true,
-    enabled: true,
-    osLabel: 'Microsoft Signed Recovery / Windows PE',
-  },
-  {
-    id: 'usb-unsigned',
-    label: 'UEFI: Custom Lab Linux ISO (Unsigned)',
-    devicePath: 'PciRoot(0x0)/Pci(0x14,0x0)/USB(0x5,0x0)/CDROM(0x1)',
-    type: 'usb',
-    signed: false,
-    enabled: false,
-    osLabel: 'Custom Kernel Build (Unsigned EFI Binary)',
-  },
-  {
-    id: 'pxe-ipv4',
-    label: 'UEFI: PXE IPv4 Onboard Ethernet Controller',
-    devicePath: 'PciRoot(0x0)/Pci(0x1F,0x6)/MAC(5C80B6429A10,0x1)/IPv4(0.0.0.0)',
-    type: 'pxe',
-    signed: true,
-    enabled: false,
-    osLabel: 'Network Boot Server (WDS / iPXE)',
-  },
+const BOOT_ENTRY_HDD1: BootEntry = {
+  id: 'hdd.1',
+  cctkCode: 'hdd.1',
+  label: 'UEFI: Windows Boot Manager (hdd.1 / M.2 SSD-0)',
+  devicePath: 'PciRoot(0x0)/Pci(0x1D,0x0)/Pci(0x0,0x0)/NVMe(0x1,00-08-0D-04)/HD(1,GPT,8F2A-91C4)',
+  type: 'nvme',
+  signed: true,
+  enabled: true,
+  osLabel: 'Windows 11 Pro 24H2 (Primary M.2 SSD-0)',
+};
+
+const BOOT_ENTRY_HDD2: BootEntry = {
+  id: 'hdd.2',
+  cctkCode: 'hdd.2',
+  label: 'UEFI: Secondary Storage / Lab OS (hdd.2 / M.2 SSD-1)',
+  devicePath: 'PciRoot(0x0)/Pci(0x1B,0x0)/Pci(0x0,0x0)/NVMe(0x2,00-14-2D-09)/HD(1,GPT,41A9-CC12)',
+  type: 'nvme',
+  signed: false,
+  enabled: true,
+  osLabel: 'Secondary NVMe / Custom Lab Linux (Unsigned EFI)',
+};
+
+const BOOT_ENTRY_PXE_IPV4: BootEntry = {
+  id: 'embnicipv4',
+  cctkCode: 'embnicipv4',
+  label: 'UEFI: Onboard NIC IPv4 PXE (embnicipv4)',
+  devicePath: 'PciRoot(0x0)/Pci(0x1F,0x6)/MAC(5C80B6429A10,0x1)/IPv4(0.0.0.0)',
+  type: 'pxe',
+  signed: true,
+  enabled: false,
+  osLabel: 'Network Boot Server IPv4 (WDS / iPXE)',
+};
+
+const BOOT_ENTRY_PXE_IPV6: BootEntry = {
+  id: 'embnicipv6',
+  cctkCode: 'embnicipv6',
+  label: 'UEFI: Onboard NIC IPv6 PXE (embnicipv6)',
+  devicePath: 'PciRoot(0x0)/Pci(0x1F,0x6)/MAC(5C80B6429A10,0x1)/IPv6(::)',
+  type: 'pxe',
+  signed: true,
+  enabled: false,
+  osLabel: 'Network Boot Server IPv6',
+};
+
+const BOOT_ENTRY_URI: BootEntry = {
+  id: 'uri',
+  cctkCode: 'uri',
+  label: 'UEFI: HTTPS / URI Network Boot (uri)',
+  devicePath: 'PciRoot(0x0)/Pci(0x1F,0x6)/MAC(5C80B6429A10,0x1)/Uri()',
+  type: 'uri',
+  signed: true,
+  enabled: false,
+  osLabel: 'HTTPS Boot / BIOSConnect Cloud Image',
+};
+
+// Factory shipping defaults for Dell Pro Micro Plus QBM1250
+export const FACTORY_BOOT_SEQUENCE: BootEntry[] = [
+  { ...BOOT_ENTRY_HDD1, enabled: true },
+  { ...BOOT_ENTRY_HDD2, enabled: true },
+  { ...BOOT_ENTRY_PXE_IPV4, enabled: false },
+  { ...BOOT_ENTRY_PXE_IPV6, enabled: false },
+  { ...BOOT_ENTRY_URI, enabled: false },
 ];
 
-export const DEFAULT_BIOS_CONFIG: BiosConfig = {
+// Imported from QBM1250_bios_config_58746970.ini:
+// BootOrder=uefitype,+hdd.2,+hdd.1,+embnicipv4,+embnicipv6,+uri
+export const IMPORTED_BOOT_SEQUENCE: BootEntry[] = [
+  { ...BOOT_ENTRY_HDD2, enabled: true },
+  { ...BOOT_ENTRY_HDD1, enabled: true },
+  { ...BOOT_ENTRY_PXE_IPV4, enabled: true },
+  { ...BOOT_ENTRY_PXE_IPV6, enabled: true },
+  { ...BOOT_ENTRY_URI, enabled: true },
+];
+
+export const INITIAL_BOOT_SEQUENCE = FACTORY_BOOT_SEQUENCE;
+
+// Original Factory Shipping State of Dell Pro Micro Plus QBM1250
+export const FACTORY_BIOS_CONFIG: BiosConfig = {
   bootMode: 'UEFI Only',
   secureBoot: true,
   secureBootMode: 'Deployed Mode',
   microsoftUefiCa: true,
   uefiBootPathSecurity: 'Always Except Internal HDD',
-  bootSequence: INITIAL_BOOT_SEQUENCE.map((b) => ({ ...b })),
+  httpsBoot: true,
+  bootSequence: FACTORY_BOOT_SEQUENCE.map((b) => ({ ...b })),
 
   sataNvmeOperation: 'RAID On',
   m2Slot0Enabled: true,
@@ -203,6 +255,8 @@ export const DEFAULT_BIOS_CONFIG: BiosConfig = {
 
   integratedNic: 'Enabled w/ PXE',
   macAddressPassThrough: 'System Unique MAC',
+  wirelessLan: true,
+  bluetoothDevice: true,
   thunderboltEnabled: true,
   thunderboltSecurity: 'User Authorization',
   integratedAudio: true,
@@ -250,8 +304,20 @@ export const DEFAULT_BIOS_CONFIG: BiosConfig = {
 
   supportAssistRecovery: true,
   biosConnect: true,
-  rollbackProtection: true,
+  rollbackProtection: false,
 };
+
+// Imported Config from QBM1250_bios_config_58746970.ini
+export const IMPORTED_QBM1250_CONFIG: BiosConfig = {
+  ...FACTORY_BIOS_CONFIG,
+  secureBoot: false, // SecureBoot=Disabled (Factory: Enabled)
+  bootSequence: IMPORTED_BOOT_SEQUENCE.map((b) => ({ ...b })), // +hdd.2,+hdd.1,+embnicipv4,+embnicipv6,+uri
+  sataNvmeOperation: 'AHCI/NVMe', // EmbSataRaid=Ahci (Factory: Raid)
+  deepSleepControl: 'Disabled', // DeepSleepCtrl=Disabled (Factory: Enabled in S4 and S5)
+  wakeOnLan: 'LAN Only', // WakeOnLan=LanOnly (Factory: Disabled)
+};
+
+export const DEFAULT_BIOS_CONFIG = FACTORY_BIOS_CONFIG;
 
 export const BIOS_CATEGORIES: { id: CategoryId; label: string; group: string }[] = [
   { id: 'overview', label: 'Overview', group: 'System' },
@@ -282,10 +348,12 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'secureBoot',
     category: 'boot',
     title: 'Secure Boot',
+    cctkKey: 'SecureBoot',
+    factoryCctkValue: 'Enabled',
     summary:
       'Validates cryptographic signatures of UEFI drivers, option ROMs, and OS bootloaders against trusted certificates in NVRAM before execution.',
     lectureNote:
-      'Demonstrate to students: when ON, booting an unsigned EFI binary (like our Custom Lab Linux ISO) triggers a Secure Boot Violation halt before the OS kernel loads.',
+      'In your imported QBM1250 config (8J3TFK4), SecureBoot was changed from Factory Enabled to Disabled so unsigned boot media or secondary OS kernels can boot without signature halts.',
     riskNote:
       'Disabling Secure Boot reduces boot-chain integrity and may trigger Windows BitLocker recovery prompts if PCR 7 changes.',
   },
@@ -293,6 +361,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'secureBootMode',
     category: 'boot',
     title: 'Secure Boot Mode',
+    cctkKey: 'SecureBootMode',
+    factoryCctkValue: 'DeployedMode',
     summary:
       'Deployed Mode enforces full UEFI signature validation. Audit Mode logs signature failures without blocking execution for testing custom images.',
     lectureNote:
@@ -302,6 +372,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'microsoftUefiCa',
     category: 'boot',
     title: 'Enable Microsoft UEFI CA',
+    cctkKey: 'MSUefiCA',
+    factoryCctkValue: 'Enabled',
     summary:
       'Controls whether the Microsoft Corporation UEFI CA 2011/2023 third-party certificate is trusted in the Secure Boot db database.',
     lectureNote:
@@ -311,28 +383,45 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'uefiBootPathSecurity',
     category: 'boot',
     title: 'UEFI Boot Path Security',
+    cctkKey: 'UefiBootPathSecurity',
+    factoryCctkValue: 'AlwaysExceptInternalHdd',
     summary:
       'Determines whether the firmware requires the Admin Password when booting from an external UEFI path (e.g., USB drive or PXE).',
     lectureNote:
       'Prevents an attacker from simply pressing F12 at startup and booting a live USB OS when an Admin Password is configured.',
   },
+  httpsBoot: {
+    key: 'httpsBoot',
+    category: 'boot',
+    title: 'HTTPS Boot',
+    cctkKey: 'HttpsBoot',
+    factoryCctkValue: 'Enabled',
+    summary:
+      'Allows UEFI firmware to fetch signed OS recovery or deployment images over HTTPS via URI device paths.',
+    lectureNote:
+      'Works alongside the +uri entry in BootOrder for zero-touch cloud provisioning.',
+  },
   bootSequence: {
     key: 'bootSequence',
     category: 'boot',
     title: 'Boot Sequence',
+    cctkKey: 'BootOrder',
+    factoryCctkValue: 'uefitype,+hdd.1,+hdd.2,-embnicipv4,-embnicipv6,-uri',
     summary:
       'Defines the priority order in which the UEFI Boot Manager searches enabled device paths for an EFI System Partition (ESP).',
     lectureNote:
-      'Toggle "Custom Lab Linux ISO (Unsigned)" on and move it to position #1 to demonstrate both boot-order priority and Secure Boot enforcement during the POST simulation.',
+      'Your imported QBM1250 .ini sets BootOrder=uefitype,+hdd.2,+hdd.1,+embnicipv4,+embnicipv6,+uri—placing secondary storage (hdd.2) first and enabling IPv4 PXE, IPv6 PXE, and HTTPS URI boot.',
   },
   sataNvmeOperation: {
     key: 'sataNvmeOperation',
     category: 'storage',
     title: 'SATA / NVMe Operation',
+    cctkKey: 'EmbSataRaid',
+    factoryCctkValue: 'Raid',
     summary:
       'Configures the Intel RST VMD (Volume Management Device) storage controller mode presented to the operating system.',
     lectureNote:
-      'Classic lecture topic: Dell ships with "RAID On" (Intel VMD) by default. Linux installers often cannot see the NVMe SSD until switched to "AHCI/NVMe", whereas an existing Windows install will throw INACCESSIBLE_BOOT_DEVICE unless Safe Mode driver injection is performed first.',
+      'Your imported QBM1250 config switched EmbSataRaid from factory "Raid" (RAID On) to "Ahci" (AHCI/NVMe), making NVMe drives directly visible to standard Linux and OS installers.',
     riskNote:
       'Changing this setting after an operating system is installed may prevent the OS from booting.',
   },
@@ -340,6 +429,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'm2Slot0Enabled',
     category: 'storage',
     title: 'M.2 PCIe SSD-0',
+    cctkKey: 'M2PcieSsd0',
+    factoryCctkValue: 'Enabled',
     summary:
       'Enables or electrically isolates the primary M.2 2280 PCIe Gen4 x4 NVMe slot on the system board.',
     lectureNote:
@@ -349,6 +440,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'm2Slot1Enabled',
     category: 'storage',
     title: 'M.2 PCIe SSD-1',
+    cctkKey: 'M2PcieSsd1',
+    factoryCctkValue: 'Enabled',
     summary:
       'Enables or disables the secondary M.2 PCIe storage bay.',
     lectureNote:
@@ -358,6 +451,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'smartReporting',
     category: 'storage',
     title: 'SMART Reporting',
+    cctkKey: 'SmartErrors',
+    factoryCctkValue: 'Disabled',
     summary:
       'Queries drive Self-Monitoring, Analysis, and Reporting Technology telemetry during POST and halts if a predictive failure threshold is crossed.',
     lectureNote:
@@ -367,6 +462,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'externalUsbBoot',
     category: 'storage',
     title: 'Enable External USB Drive',
+    cctkKey: 'UsbEmu',
+    factoryCctkValue: 'Enabled',
     summary:
       'Permits booting operating systems and recovery environments from USB Mass Storage devices.',
     lectureNote:
@@ -376,8 +473,10 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'integratedNic',
     category: 'system',
     title: 'Integrated NIC',
+    cctkKey: 'EmbNic1',
+    factoryCctkValue: 'EnabledPxe',
     summary:
-      'Controls the onboard Intel I219-LM Gigabit Ethernet controller and its Preboot Execution Environment (PXE) network boot stack.',
+      'Controls the onboard Gigabit/2.5GbE Ethernet controller and its Preboot Execution Environment (PXE) network boot stack.',
     lectureNote:
       'Must be set to "Enabled w/ PXE" for automated enterprise OS deployment (SCCM, FOG, Clonezilla, iPXE) over LAN.',
   },
@@ -386,9 +485,31 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     category: 'system',
     title: 'MAC Address Pass-Through',
     summary:
-      'Overrides a compatible Dell USB-C / Thunderbolt dock NIC MAC address with the laptop’s burned-in system-unique MAC address.',
+      'Overrides a compatible Dell USB-C / Thunderbolt dock NIC MAC address with the system’s burned-in unique MAC address.',
     lectureNote:
-      'Solves DHCP reservations and 802.1X NAC port-security issues in hot-desking environments where multiple laptops share one dock.',
+      'Solves DHCP reservations and 802.1X NAC port-security issues in enterprise environments.',
+  },
+  wirelessLan: {
+    key: 'wirelessLan',
+    category: 'system',
+    title: 'Wireless LAN',
+    cctkKey: 'WirelessLan',
+    factoryCctkValue: 'Enabled',
+    summary:
+      'Enables or disables the internal M.2 Wi-Fi radio module at firmware level.',
+    lectureNote:
+      'Can be disabled on wired-only lab workstations to enforce wired Ethernet policies.',
+  },
+  bluetoothDevice: {
+    key: 'bluetoothDevice',
+    category: 'system',
+    title: 'Bluetooth Device',
+    cctkKey: 'BluetoothDevice',
+    factoryCctkValue: 'Enabled',
+    summary:
+      'Enables or disables the onboard Bluetooth controller prior to OS boot.',
+    lectureNote:
+      'Firmware-level Bluetooth toggle for secure workstation baselines.',
   },
   thunderboltEnabled: {
     key: 'thunderboltEnabled',
@@ -674,6 +795,8 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'deepSleepControl',
     category: 'power',
     title: 'Deep Sleep Control',
+    cctkKey: 'DeepSleepCtrl',
+    factoryCctkValue: 'EnabledInS4AndS5',
     summary:
       'Powers down USB and onboard LAN standby rails in S4 (Hibernate) and S5 (Soft Off) to meet ErP Lot 6 low-power limits.',
     lectureNote:
@@ -702,10 +825,12 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
     key: 'wakeOnLan',
     category: 'systemmanagement',
     title: 'Wake on LAN / WLAN',
+    cctkKey: 'WakeOnLan',
+    factoryCctkValue: 'Disabled',
     summary:
       'Allows the Dell Pro Micro QBM1250 to be powered on from S4 (Hibernate) or S5 (Soft Off) via a network Magic Packet.',
     lectureNote:
-      'Three-part QBM1250 BIOS checklist for WoL: (1) Set Wake on LAN to "LAN Only" or "LAN with PXE Boot", (2) Set Power -> Deep Sleep Control to "Disabled", and (3) Ensure System Configuration -> Integrated NIC is Enabled. In Windows, also disable Fast Startup and Energy Efficient Ethernet.',
+      'Imported QBM1250 config sets WakeOnLan=LanOnly (changed from Factory Disabled) together with DeepSleepCtrl=Disabled and EmbNic1=EnabledPxe.',
   },
   acRecovery: {
     key: 'acRecovery',
@@ -765,44 +890,39 @@ export const SETTING_HELP_MAP: Record<string, SettingMetadata> = {
 
 export const LECTURE_SCENARIOS: LectureScenario[] = [
   {
-    id: 'default',
-    title: '1. Factory Default (BIOS 1.20.0)',
-    subtitle: 'Standard enterprise shipping profile',
+    id: 'imported-qbm1250',
+    title: '1. Imported QBM1250 Config (.ini)',
+    subtitle: 'Actual 8J3TFK4 export (5 changes vs Factory)',
     description:
-      'UEFI Secure Boot ON, RAID On (Intel VMD), TPM 2.0 ON, Deep Sleep S4/S5 ON, Wake on LAN Disabled.',
-    patch: { ...DEFAULT_BIOS_CONFIG },
+      'Loads QBM1250_bios_config_58746970.ini: SecureBoot OFF, AHCI/NVMe, DeepSleep Disabled, WakeOnLan LAN Only, BootOrder +hdd.2 first.',
+    patch: {
+      ...IMPORTED_QBM1250_CONFIG,
+      bootSequence: IMPORTED_BOOT_SEQUENCE.map((b) => ({ ...b })),
+    },
   },
   {
-    id: 'wol-qbm1250',
-    title: '2. Wake-on-LAN (Dell QBM1250 Lab)',
-    subtitle: 'Full S5 Magic Packet & Deep Sleep setup',
+    id: 'default',
+    title: '2. Dell Factory Original (Shipping State)',
+    subtitle: 'Unmodified QBM1250 factory baseline',
     description:
-      'Sets Wake on LAN to LAN Only, disables Deep Sleep Control, enables Integrated NIC w/ PXE, AC Recovery Last Power State.',
+      'Secure Boot ON, RAID On (Intel VMD), Deep Sleep S4/S5 ON, Wake on LAN Disabled, BootOrder +hdd.1 primary.',
     patch: {
-      wakeOnLan: 'LAN Only',
-      deepSleepControl: 'Disabled',
-      integratedNic: 'Enabled w/ PXE',
-      acRecovery: 'Last Power State',
-      blockSleep: false,
+      ...FACTORY_BIOS_CONFIG,
+      bootSequence: FACTORY_BOOT_SEQUENCE.map((b) => ({ ...b })),
     },
   },
   {
     id: 'linux-dualboot',
-    title: '3. Linux Dual-Boot & AHCI Lab',
-    subtitle: 'Storage controller & unsigned kernel demo',
+    title: '3. Linux Dual-Boot & Secure Boot Trap',
+    subtitle: 'Storage AHCI + Secure Boot ON vs Unsigned hdd.2',
     description:
-      'Switches Storage to AHCI/NVMe, enables Custom Unsigned Linux USB in Boot Order #1, sets Thorough POST.',
+      'Keeps Secure Boot ON with unsigned hdd.2 as Boot #1 to demonstrate Secure Boot Violation during POST.',
     patch: {
       sataNvmeOperation: 'AHCI/NVMe',
       secureBoot: true,
       fastboot: 'Thorough',
       extendPostTime: '5 Seconds',
-      bootSequence: [
-        { ...INITIAL_BOOT_SEQUENCE[2], enabled: true },
-        { ...INITIAL_BOOT_SEQUENCE[0], enabled: true },
-        { ...INITIAL_BOOT_SEQUENCE[1], enabled: true },
-        { ...INITIAL_BOOT_SEQUENCE[3], enabled: false },
-      ],
+      bootSequence: IMPORTED_BOOT_SEQUENCE.map((b) => ({ ...b })),
     },
   },
   {
@@ -843,6 +963,14 @@ export const LECTURE_SCENARIOS: LectureScenario[] = [
 
 export const INITIAL_LOGS: BiosLogEntry[] = [
   {
+    id: 'log-0',
+    timestamp: '2026-11-16 06:18:00',
+    category: 'BIOS Events',
+    severity: 'INFO',
+    message:
+      'Imported CCTK config QBM1250_bios_config_58746970.ini (SvcTag 8J3TFK4, BiosVer 1.18.2): 5 differences detected vs Dell Factory Original.',
+  },
+  {
     id: 'log-1',
     timestamp: '2026-11-03 14:22:08',
     category: 'BIOS Events',
@@ -871,3 +999,51 @@ export const INITIAL_LOGS: BiosLogEntry[] = [
     message: 'Thermal Management profile initialized: Optimized (CPU Package 39°C, Blower 1450 RPM).',
   },
 ];
+
+export interface FactoryDiffItem {
+  key: keyof BiosConfig;
+  category: CategoryId;
+  categoryLabel: string;
+  label: string;
+  cctkKey?: string;
+  factoryValue: string;
+  currentValue: string;
+}
+
+export function formatBiosSettingValue(key: keyof BiosConfig, value: unknown): string {
+  if (key === 'bootSequence' && Array.isArray(value)) {
+    return (value as BootEntry[])
+      .map((b) => `${b.enabled ? '+' : '-'}${b.cctkCode}`)
+      .join(',');
+  }
+  if (key === 'adminPassword' || key === 'systemPassword' || key === 'nvmePassword') {
+    return value ? 'Set (••••••)' : 'Not Set';
+  }
+  if (typeof value === 'boolean') return value ? 'ON' : 'OFF';
+  if (typeof value === 'string') return value === '' ? 'Not Set' : value;
+  return String(value);
+}
+
+export function computeFactoryDiffs(config: BiosConfig): FactoryDiffItem[] {
+  const diffs: FactoryDiffItem[] = [];
+  (Object.keys(FACTORY_BIOS_CONFIG) as (keyof BiosConfig)[]).forEach((key) => {
+    if (JSON.stringify(config[key]) === JSON.stringify(FACTORY_BIOS_CONFIG[key])) {
+      return;
+    }
+    const meta = SETTING_HELP_MAP[key];
+    const category: CategoryId = meta?.category ?? 'overview';
+    const categoryLabel =
+      BIOS_CATEGORIES.find((c) => c.id === category)?.label ?? category;
+    diffs.push({
+      key,
+      category,
+      categoryLabel,
+      label: meta?.title ?? String(key),
+      cctkKey: meta?.cctkKey,
+      factoryValue: formatBiosSettingValue(key, FACTORY_BIOS_CONFIG[key]),
+      currentValue: formatBiosSettingValue(key, config[key]),
+    });
+  });
+  return diffs;
+}
+

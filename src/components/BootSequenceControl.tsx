@@ -6,22 +6,28 @@ interface BootSequenceControlProps {
   entries: BootEntry[];
   externalUsbBoot: boolean;
   integratedNic: string;
+  httpsBoot?: boolean;
   disabled?: boolean;
   onChange: (next: BootEntry[]) => void;
   onSelect: () => void;
   isSelected: boolean;
   isModified: boolean;
+  isChangedFromFactory?: boolean;
+  factoryBootSummary?: string;
 }
 
 export const BootSequenceControl: React.FC<BootSequenceControlProps> = ({
   entries,
   externalUsbBoot,
   integratedNic,
+  httpsBoot = true,
   disabled = false,
   onChange,
   onSelect,
   isSelected,
   isModified,
+  isChangedFromFactory = false,
+  factoryBootSummary,
 }) => {
   const moveEntry = (index: number, direction: -1 | 1) => {
     if (disabled) return;
@@ -46,15 +52,22 @@ export const BootSequenceControl: React.FC<BootSequenceControlProps> = ({
       className={`rounded-md border p-4 transition-colors duration-150 ${
         isSelected
           ? 'bg-[#1c2532] border-[#007DB8]'
+          : isChangedFromFactory
+          ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
           : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
       }`}
     >
       <div className="flex items-center justify-between gap-4 mb-3">
         <div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <h3 className="text-[15px] font-semibold text-slate-100">Boot Sequence</h3>
+            {isChangedFromFactory && (
+              <span className="text-xs font-mono font-medium text-amber-300">
+                Changed from Factory{factoryBootSummary ? ` (Original: ${factoryBootSummary})` : ''}
+              </span>
+            )}
             {isModified && (
-              <span className="text-xs font-mono font-medium text-amber-400">Modified</span>
+              <span className="text-xs font-mono font-medium text-sky-400">Unsaved</span>
             )}
           </div>
           <p className="mt-1 text-[13px] text-slate-400">
@@ -67,7 +80,8 @@ export const BootSequenceControl: React.FC<BootSequenceControlProps> = ({
         {entries.map((entry, idx) => {
           const blockedByHardware =
             (entry.type === 'usb' && !externalUsbBoot) ||
-            (entry.type === 'pxe' && integratedNic !== 'Enabled w/ PXE');
+            (entry.type === 'pxe' && integratedNic !== 'Enabled w/ PXE') ||
+            (entry.type === 'uri' && (!httpsBoot || integratedNic === 'Disabled'));
 
           return (
             <div

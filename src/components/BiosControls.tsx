@@ -7,6 +7,8 @@ interface BiosSettingRowProps {
   subtitle?: string;
   isSelected: boolean;
   isModified?: boolean;
+  isChangedFromFactory?: boolean;
+  factoryDefaultValue?: string;
   isLocked?: boolean;
   onSelect: (key: string) => void;
   children: React.ReactNode;
@@ -18,6 +20,8 @@ export const BiosSettingCard: React.FC<BiosSettingRowProps> = ({
   subtitle,
   isSelected,
   isModified = false,
+  isChangedFromFactory = false,
+  factoryDefaultValue,
   isLocked = false,
   onSelect,
   children,
@@ -29,16 +33,23 @@ export const BiosSettingCard: React.FC<BiosSettingRowProps> = ({
       className={`rounded-md border p-4 transition-colors duration-150 cursor-pointer ${
         isSelected
           ? 'bg-[#1c2532] border-[#007DB8]'
+          : isChangedFromFactory
+          ? 'bg-[#18202c] border-[#855b1a] hover:border-amber-400/70'
           : 'bg-[#161d27] border-[#273242] hover:border-[#3a4a60]'
       }`}
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1 pr-2">
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <h3 className="text-[15px] font-semibold text-slate-100 leading-snug">{title}</h3>
+            {isChangedFromFactory && (
+              <span className="text-xs font-mono font-medium text-amber-300">
+                Changed from Factory{factoryDefaultValue ? ` (Original: ${factoryDefaultValue})` : ''}
+              </span>
+            )}
             {isModified && (
-              <span className="text-xs font-mono font-medium text-amber-400">
-                Modified
+              <span className="text-xs font-mono font-medium text-sky-400">
+                Unsaved
               </span>
             )}
             {isLocked && (
